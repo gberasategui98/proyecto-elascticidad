@@ -3,19 +3,25 @@ import numpy as np
 
 # Nota: para crear celdas utilziar "#%%"
 estados = ['e', 'h', 's', 'v', 'g', 'c', 'b', 'x']
-
+operaciones = ['h', 's', 'v', 'g', 'c', 'b']
+K = ['WS-cpu', 'WS-disk', 'AS-cpu', 'AS-disk', 'DS-cpu', 'DS-disk']
 
 class sistema():
 
-    def __init__(self, fA, fB):
+    def __init__(self, fA, fB, N):
         self.fA = fA
         self.fB = fB
+        self.N = pd.Series(index=['WS', 'AS', 'DS'], data=N)
 
         self.crearMatricesProbabilidadTransición()
         self.crearMatrizDemandas()
 
         self.calcularFrecuenciaOperaciones()
-        self.calcularCargaOperaciones
+        self.calcularCargaOperaciones()
+
+        self.calcularUtilizaciónRecursos()
+        self.calcularResidenciaOpxRecurso()
+        self.calcularTrespuestaXOperacion()
 
     def crearMatricesProbabilidadTransición(self):
         # Mariz de Probabilidad de Transición de usuarios tipo A
@@ -64,15 +70,15 @@ class sistema():
         self.v_B = np.linalg.solve(A, B)[:-1]
         return
 
+
     def calcularCargaOperaciones(self):
         carga_media = self.v_A*self.fA + self.v_B*self.fB
-        self.carga_media = pd.DataFrame(
-            data=carga_media, index=estados[:-1], columns=['carga'], dtype=float)
-        print(self.carga_media)
+        self.carga_media = pd.Series(
+            data=carga_media[1:], index=operaciones, dtype=float)
         return
 
     def crearMatrizDemandas(self):
-        K = ['WS-cpu', 'WS-disk', 'AS-cpu', 'AS-disk', 'DS-cpu', 'DS-disk']
+        
         R = ['h', 's', 'g', 'v', 'c', 'b']
         self.D = pd.DataFrame(index=K, columns=R, dtype=float)
         self.D.loc['WS-cpu'] = [0.008, 0.009, 0.011, 0.060, 0.012, 0.015]
@@ -81,8 +87,48 @@ class sistema():
         self.D.loc['AS-disk'] = [0.0, 0.008, 0.08, 0.009, 0.011, 0.012]
         self.D.loc['DS-cpu'] = [0.0, 0.01, 0.009, 0.015, 0.07, 0.045]
         self.D.loc['DS-disk'] = [0.0, 0.035, 0.018, 0.05, 0.08, 0.09]
-        print(self.D)
         return
 
 
-sist = sistema(0.25, 0.75)
+    def calcularUtilizaciónRecursos(self,carga):
+        #Utilización de los recurso para todas las clases de operaciones
+        self.utilizacionRec = pd.Series(index=K, dtype=float)
+        self.utilizacionRec['WS-cpu'] = np.sum((carga/self.N['WS']) * self.D.loc['WS-cpu'])
+        self.utilizacionRec['WS-disk'] = np.sum((carga/self.N['WS']) * self.D.loc['WS-disk'])
+        self.utilizacionRec['AS-cpu'] = np.sum((carga/self.N['AS']) * self.D.loc['AS-cpu'])
+        self.utilizacionRec['AS-disk'] = np.sum((carga/self.N['AS']) * self.D.loc['AS-disk'])
+        self.utilizacionRec['DS-cpu'] = np.sum((carga/self.N['DS']) * self.D.loc['DS-cpu'])
+        self.utilizacionRec['DS-disk'] = np.sum((carga/self.N['DS']) * self.D.loc['DS-disk'])
+
+        return
+
+    def calcularResidenciaOpxRecurso(self):
+        T_ir = self.D.to_numpy() / (1 - self.utilizacionRec.to_numpy().reshape([1,-1]))
+        self.T_ir = pd.DataFrame(index=K, columns=operaciones, data= T_ir, dtype=float)
+        return
+
+    def calcularTRespuestaXOperacion(self):
+        self.Tres_operacion = self.T_ir.sum(axis=0)
+        return
+
+    def calcularTMedioRespuesta(self):
+        self.Tres_medio = self.Tres_operacion.sum()
+        print(self.Tres_medio)
+        return
+
+    #FUNCIÓN SIN TERMINAR Y TESTEAR
+    def introducirCarga(self, carga):
+        '''
+        Entrada: carga del sistema
+        Salida: Tiempo medio de respuesta de operaciones y tiempo de respuesta para cada clase de operación
+        '''
+        self.calcularUtilizaciónRecursos(carga)
+        self.calcularResidenciaOpxRecurso()
+        self.calcularTRespuestaXOperacion()
+        self.calcularTMedioRespuesta()
+        return
+
+N = [1,1,1]
+sist = sistema(0.25, 0.75,N)
+
+carga = np.array([0.001, 0.02, 0.02, 0.4, 0.6, 0.3])
