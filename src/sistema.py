@@ -8,7 +8,7 @@ K = ['WS-cpu', 'WS-disk', 'AS-cpu', 'AS-disk', 'DS-cpu', 'DS-disk']
 
 class sistema():
 
-    def __init__(self, fA, fB, N):
+    def __init__(self, fA, fB, N=[1,1,1]):
         self.fA = fA
         self.fB = fB
         self.N = pd.Series(index=['WS', 'AS', 'DS'], data=N)
@@ -17,11 +17,11 @@ class sistema():
         self.crearMatrizDemandas()
 
         self.calcularFrecuenciaOperaciones()
-        self.calcularCargaOperaciones()
+        self.calcularFactoresCargaOperaciones()
 
-        self.calcularUtilizaciónRecursos()
-        self.calcularResidenciaOpxRecurso()
-        self.calcularTrespuestaXOperacion()
+    def configurarNServidores(self, N):
+        self.N = pd.Series(index=['WS', 'AS', 'DS'], data=N)
+        return
 
     def crearMatricesProbabilidadTransición(self):
         # Mariz de Probabilidad de Transición de usuarios tipo A
@@ -58,7 +58,7 @@ class sistema():
         A[0, 0] = 1
         B = np.zeros([len(estados)])
         B[0] = 1
-        self.v_A = np.linalg.solve(A, B)[:-1]
+        self.v_A = np.linalg.solve(A, B)[1:-1]
 
         # Calculo frecuencia de operaciones para usuario tipo B
         A = self.p_B.to_numpy().transpose()
@@ -67,14 +67,18 @@ class sistema():
         A[0, 0] = 1
         B = np.zeros([len(estados)])
         B[0] = 1
-        self.v_B = np.linalg.solve(A, B)[:-1]
+        self.v_B = np.linalg.solve(A, B)[1:-1]
         return
 
 
-    def calcularCargaOperaciones(self):
-        carga_media = self.v_A*self.fA + self.v_B*self.fB
-        self.carga_media = pd.Series(
-            data=carga_media[1:], index=operaciones, dtype=float)
+    def calcularFactoresCargaOperaciones(self):
+        fact_distr_carga = self.v_A*self.fA + self.v_B*self.fB
+        self.fact_distr_carga = pd.Series(
+            data=fact_distr_carga, index=operaciones, dtype=float)
+        return
+
+    def calculaCargaOperaciones(self):
+        self.distr_carga = self.carga_global * self.fact_distr_carga
         return
 
     def crearMatrizDemandas(self):
@@ -89,21 +93,20 @@ class sistema():
         self.D.loc['DS-disk'] = [0.0, 0.035, 0.018, 0.05, 0.08, 0.09]
         return
 
-
-    def calcularUtilizaciónRecursos(self,carga):
+    def calcularUtilizaciónRecursos(self):
         #Utilización de los recurso para todas las clases de operaciones
         self.utilizacionRec = pd.Series(index=K, dtype=float)
-        self.utilizacionRec['WS-cpu'] = np.sum((carga/self.N['WS']) * self.D.loc['WS-cpu'])
-        self.utilizacionRec['WS-disk'] = np.sum((carga/self.N['WS']) * self.D.loc['WS-disk'])
-        self.utilizacionRec['AS-cpu'] = np.sum((carga/self.N['AS']) * self.D.loc['AS-cpu'])
-        self.utilizacionRec['AS-disk'] = np.sum((carga/self.N['AS']) * self.D.loc['AS-disk'])
-        self.utilizacionRec['DS-cpu'] = np.sum((carga/self.N['DS']) * self.D.loc['DS-cpu'])
-        self.utilizacionRec['DS-disk'] = np.sum((carga/self.N['DS']) * self.D.loc['DS-disk'])
-
+        self.utilizacionRec['WS-cpu'] = np.sum((self.distr_carga/self.N['WS']) * self.D.loc['WS-cpu'])
+        self.utilizacionRec['WS-disk'] = np.sum((self.distr_carga/self.N['WS']) * self.D.loc['WS-disk'])
+        self.utilizacionRec['AS-cpu'] = np.sum((self.distr_carga/self.N['AS']) * self.D.loc['AS-cpu'])
+        self.utilizacionRec['AS-disk'] = np.sum((self.distr_carga/self.N['AS']) * self.D.loc['AS-disk'])
+        self.utilizacionRec['DS-cpu'] = np.sum((self.distr_carga/self.N['DS']) * self.D.loc['DS-cpu'])
+        self.utilizacionRec['DS-disk'] = np.sum((self.distr_carga/self.N['DS']) * self.D.loc['DS-disk'])
         return
 
     def calcularResidenciaOpxRecurso(self):
-        T_ir = self.D.to_numpy() / (1 - self.utilizacionRec.to_numpy().reshape([1,-1]))
+        print(self.D)
+        T_ir = self.D.to_numpy() / (1 - self.utilizacionRec.to_numpy().reshape([-1,1]))
         self.T_ir = pd.DataFrame(index=K, columns=operaciones, data= T_ir, dtype=float)
         return
 
@@ -112,23 +115,34 @@ class sistema():
         return
 
     def calcularTMedioRespuesta(self):
-        self.Tres_medio = self.Tres_operacion.sum()
-        print(self.Tres_medio)
+        self.Tres_medio = np.sum(self.Tres_operacion * (self.distr_carga / self.carga_global))
         return
 
-    #FUNCIÓN SIN TERMINAR Y TESTEAR
+    #LOS TIEMPOS DE RESPUESTA NO SALEN IGUAL QUE EN EL LIBRO
     def introducirCarga(self, carga):
         '''
-        Entrada: carga del sistema
-        Salida: Tiempo medio de respuesta de operaciones y tiempo de respuesta para cada clase de operación
+        Entrada: carga global del sistema
+        Salida: Tiempo medio de respuesta de operaciones, tiempo de respuesta para cada clase de operación 
+        y booleano indicando si algun recurso tiene utilización > 0.9
         '''
-        self.calcularUtilizaciónRecursos(carga)
+        self.carga_global = carga
+
+        self.calculaCargaOperaciones()
+        self.calcularUtilizaciónRecursos()
         self.calcularResidenciaOpxRecurso()
         self.calcularTRespuestaXOperacion()
         self.calcularTMedioRespuesta()
-        return
+        if any(self.utilizacionRec > 0.9):
+            saturado = True
+        else:
+            saturado = False
+        return self.Tres_medio, self.Tres_operacion, saturado
 
-N = [1,1,1]
-sist = sistema(0.25, 0.75,N)
+N = [1,1,2]
+sist = sistema(0.25, 0.75, N)
 
-carga = np.array([0.001, 0.02, 0.02, 0.4, 0.6, 0.3])
+carga = 11
+tMedio, tOperaciones, saturado = sist.introducirCarga(carga)
+print(tMedio)
+print(tOperaciones)
+print(saturado)
