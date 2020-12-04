@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
 
 # Nota: para crear celdas utilziar "#%%"
 estados = ['e', 'h', 's', 'v', 'g', 'c', 'b', 'x']
@@ -26,7 +28,7 @@ class sistema():
     def crearMatricesProbabilidadTransición(self):
         # Mariz de Probabilidad de Transición de usuarios tipo A
         p_A = pd.DataFrame(index=estados, columns=estados, dtype=float)
-        p_A.loc['e'] = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        p_A.loc['e']= [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         p_A.loc['h'] = [0.0, 0.0, 0.7, 0.0, 0.1, 0.0, 0.0, 0.2]
         p_A.loc['s'] = [0.0, 0.0, 0.4, 0.2, 0.15, 0.0, 0.0, 0.25]
         p_A.loc['v'] = [0.0, 0.0, 0.0, 0.0, 0.65, 0.0, 0.0, 0.35]
@@ -105,7 +107,6 @@ class sistema():
         return
 
     def calcularResidenciaOpxRecurso(self):
-        print(self.D)
         T_ir = self.D.to_numpy() / (1 - self.utilizacionRec.to_numpy().reshape([-1,1]))
         self.T_ir = pd.DataFrame(index=K, columns=operaciones, data= T_ir, dtype=float)
         return
@@ -132,17 +133,35 @@ class sistema():
         self.calcularResidenciaOpxRecurso()
         self.calcularTRespuestaXOperacion()
         self.calcularTMedioRespuesta()
-        if any(self.utilizacionRec > 0.9):
+        if any(self.utilizacionRec > 0.90):
             saturado = True
         else:
             saturado = False
         return self.Tres_medio, self.Tres_operacion, saturado
 
-N = [1,1,2]
+N = [1,1,1]
 sist = sistema(0.25, 0.75, N)
 
-carga = 11
-tMedio, tOperaciones, saturado = sist.introducirCarga(carga)
-print(tMedio)
-print(tOperaciones)
-print(saturado)
+carga = 5
+tabla = pd.DataFrame(index=operaciones)
+saturado = False
+while(not saturado):
+    tMedio, tOperaciones, saturado = sist.introducirCarga(carga)
+    tabla[carga] = tOperaciones
+    carga+=0.5
+
+
+fig, ax = plt.subplots()
+ax.plot(tabla.columns, tabla.loc['h'])
+ax.plot(tabla.columns, tabla.loc['s'])
+ax.plot(tabla.columns, tabla.loc['v'])
+ax.plot(tabla.columns, tabla.loc['g'])
+ax.plot(tabla.columns, tabla.loc['c'])
+ax.plot(tabla.columns, tabla.loc['b'])
+
+ax.legend(['h', 's', 'v', 'g', 'c', 'b'])
+
+ax.set(xlabel='carga de entrada', ylabel='Tiempo de respuesta',
+       title='Tiempo de respuesta de operaciones dependiendo de la carga de entrada')
+
+plt.show()
